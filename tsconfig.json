@@ -1,0 +1,37 @@
+{
+  "compileOnSave": true,
+	"compilerOptions": {
+		"skipLibCheck": true,
+		"noImplicitAny": true,
+		"experimentalDecorators": true,
+		"noImplicitReturns": true,
+		"noUnusedLocals": true,
+		"noImplicitThis": true,
+		"alwaysStrict": true,
+		"strictBindCallApply": true,
+		"forceConsistentCasingInFileNames": true,
+    "baseUrl": ".",
+		"paths": {
+			"src/*": ["./src/*"]
+    },
+		"moduleResolution": "node",
+		"allowSyntheticDefaultImports": true,	
+		"preserveConstEnums": true, 
+    "lib": [
+      "dom",
+      "es2020"
+    ],
+    "module": "esnext",
+    "declaration": true,
+    "target": "es5",
+    "removeComments": false,
+		"sourceMap": false, 
+    "outDir": "./dist"
+	},
+	"include": [
+		"./src/**/*"
+	],
+	"exclude": [
+    "node_modules/*",
+	]
+}
