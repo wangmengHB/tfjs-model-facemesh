@@ -3,7 +3,7 @@
   "version": "0.0.0-rc.1",
   "description": "forked from @tensorflow-models/facemesh, used for local deployed tfjs models.",
   "main": "lib/index.js",
-  "module": "lib/index.esm.js",
+  "module": "lib/index.js",
   "typings": "lib/index.d.ts",
   "files": [
     "dist",
