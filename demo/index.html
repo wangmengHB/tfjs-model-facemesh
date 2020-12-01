@@ -38,6 +38,16 @@ limitations under the License.
     top: 50%;
     position: absolute;
   }
+
+  .container{
+    display: flex;
+  }
+
+  .param-panel{
+    width: 400px;
+  }
+
+
 </style>
 </head>
 <body>
@@ -55,6 +65,11 @@ limitations under the License.
         </video>
       </div>
       <div id="scatter-gl-container"></div>
+      <div class="param-panel">
+        <div>运行参数：</div>
+        <div>耗时：<span id="time-consume"></span></div>
+        <div>预测结果：<textarea id="predict-output" style="height: 600px; width: 380px;"></textarea></div>
+      </div>
     </div>
   </div>
 </body>

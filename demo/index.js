@@ -1,70 +1,63 @@
-/**
- * @license
- * Copyright 2020 Google LLC. All Rights Reserved.
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * https://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- * =============================================================================
- */
-
-
 import * as facemesh from '../src';
 import * as tf from '@tensorflow/tfjs-core';
 import * as tfjsWasm from '@tensorflow/tfjs-backend-wasm';
 import {version} from '@tensorflow/tfjs-backend-wasm/dist/version';
+import { 
+  drawScatterPoints, drawAllPrediction,  drawLipsContour, strokeFacePart,
+} from './drawing';
 
-import {TRIANGULATION} from './triangulation';
 
-tfjsWasm.setWasmPath(
-    `https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-wasm@${
-        version}/dist/tfjs-backend-wasm.wasm`);
 
-function isMobile() {
-  const isAndroid = /Android/i.test(navigator.userAgent);
-  const isiOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
-  return isAndroid || isiOS;
-}
+tfjsWasm.setWasmPath(`https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-wasm@${version}/dist/tfjs-backend-wasm.wasm`);
 
-function drawPath(ctx, points, closePath) {
-  const region = new Path2D();
-  region.moveTo(points[0][0], points[0][1]);
-  for (let i = 1; i < points.length; i++) {
-    const point = points[i];
-    region.lineTo(point[0], point[1]);
-  }
-
-  if (closePath) {
-    region.closePath();
-  }
-  ctx.stroke(region);
-}
-
-let model, ctx, videoWidth, videoHeight, video, canvas,
-    scatterGLHasInitialized = false, scatterGL;
+let model, ctx, videoWidth, videoHeight, video, canvas, scatterGL;
 
 const VIDEO_SIZE = 500;
-const mobile = isMobile();
-// Don't render the point cloud on mobile in order to maximize performance and
-// to avoid crowding limited screen space.
-const renderPointcloud = mobile === false;
-const stats = new Stats();
+
+const ALL_REGIONS = [
+  "silhouette",
+    "lipsUpperOuter",
+    "lipsLowerOuter",
+    "lipsUpperInner",
+    "lipsLowerInner",
+    "rightEyeUpper0",
+    "rightEyeLower0",
+    "rightEyeUpper1",
+    "rightEyeLower1",
+    "rightEyeUpper2",
+    "rightEyeLower2",
+    "rightEyeLower3",
+    "rightEyebrowUpper",
+    "rightEyebrowLower",
+    "leftEyeUpper0",
+    "leftEyeLower0",
+    "leftEyeUpper1",
+    "leftEyeLower1",
+    "leftEyeUpper2",
+    "leftEyeLower2",
+    "leftEyeLower3",
+    "leftEyebrowUpper",
+    "leftEyebrowLower",
+    "midwayBetweenEyes",
+    "noseTip",
+    "noseBottom",
+    "noseRightCorner",
+    "noseLeftCorner",
+    "rightCheek",
+    "leftCheek"
+];
+
+
+
+// const stats = new Stats();
 const state = {
-  backend: 'wasm',
-  maxFaces: 1,
-  triangulateMesh: true
+  backend: 'webgl',
+  maxFaces: 5,
+  triangulateMesh: true,
+  renderPointcloud: true,
+  drawing: 'lips',
 };
 
-if (renderPointcloud) {
-  state.renderPointcloud = true;
-}
 
 function setupDatGui() {
   const gui = new dat.GUI();
@@ -79,12 +72,18 @@ function setupDatGui() {
 
   gui.add(state, 'triangulateMesh');
 
-  if (renderPointcloud) {
-    gui.add(state, 'renderPointcloud').onChange(render => {
-      document.querySelector('#scatter-gl-container').style.display =
-          render ? 'inline-block' : 'none';
-    });
-  }
+  gui.add(state, 'renderPointcloud').onChange(render => {
+    document.querySelector('#scatter-gl-container').style.display =
+    render ? 'inline-block' : 'none';
+  });
+
+  gui.add(state, 'drawing', [
+    'mesh',
+    'all',
+    'lips',  
+    ...ALL_REGIONS,
+  ]);
+
 }
 
 async function setupCamera() {
@@ -96,8 +95,8 @@ async function setupCamera() {
       facingMode: 'user',
       // Only setting the video to a specified size in order to accommodate a
       // point cloud, so on mobile devices accept the default size.
-      width: mobile ? undefined : VIDEO_SIZE,
-      height: mobile ? undefined : VIDEO_SIZE
+      width: VIDEO_SIZE,
+      height: VIDEO_SIZE
     },
   });
   video.srcObject = stream;
@@ -109,69 +108,71 @@ async function setupCamera() {
   });
 }
 
-async function renderPrediction() {
-  stats.begin();
 
+
+async function render() {
+  // stats.begin();
+  let beginTime = new Date().getTime();
   const predictions = await model.estimateFaces(video);
-  ctx.drawImage(
-      video, 0, 0, videoWidth, videoHeight, 0, 0, canvas.width, canvas.height);
 
-  if (predictions.length > 0) {
-    predictions.forEach(prediction => {
-      const keypoints = prediction.scaledMesh;
+  if (!Array.isArray(predictions) || predictions.length === 0) {
+    return;
+  }
+  
 
-      if (state.triangulateMesh) {
-        for (let i = 0; i < TRIANGULATION.length / 3; i++) {
-          const points = [
-            TRIANGULATION[i * 3], TRIANGULATION[i * 3 + 1],
-            TRIANGULATION[i * 3 + 2]
-          ].map(index => keypoints[index]);
 
-          drawPath(ctx, points, true);
-        }
-      } else {
-        for (let i = 0; i < keypoints.length; i++) {
-          const x = keypoints[i][0];
-          const y = keypoints[i][1];
+  let time = new Date().getTime() - beginTime;
+  let timeDiv = document.getElementById('time-consume');
+  timeDiv.innerText = `${time} ms`;
 
-          ctx.beginPath();
-          ctx.arc(x, y, 1 /* radius */, 0, 2 * Math.PI);
-          ctx.fill();
-        }
-      }
-    });
-
-    if (renderPointcloud && state.renderPointcloud && scatterGL != null) {
-      const pointsData = predictions.map(prediction => {
-        let scaledMesh = prediction.scaledMesh;
-        return scaledMesh.map(point => ([-point[0], -point[1], -point[2]]));
-      });
-
-      let flattenedPointsData = [];
-      for (let i = 0; i < pointsData.length; i++) {
-        flattenedPointsData = flattenedPointsData.concat(pointsData[i]);
-      }
-      const dataset = new ScatterGL.Dataset(flattenedPointsData);
-
-      if (!scatterGLHasInitialized) {
-        scatterGL.render(dataset);
-      } else {
-        scatterGL.updateDataset(dataset);
-      }
-      scatterGLHasInitialized = true;
-    }
+  const outputDiv = document.getElementById('predict-output');
+  const log = `
+  输出的数据量太大，这里只打印输出的数据的类别：
+  ${JSON.stringify(predictions.map((item) => Object.keys(item)), null, 4)}
+  ----------------------
+  item.annotations: 
+  ${JSON.stringify(predictions.map((item) => Object.keys(item.annotations)), null, 4)}
+  `;
+  const prevLog = outputDiv.value;
+  if (prevLog !== log) {
+    outputDiv.value = log;
   }
 
-  stats.end();
-  requestAnimationFrame(renderPrediction);
-};
+  // stats.end();
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height); 
+  ctx.drawImage(video, 0, 0, videoWidth, videoHeight, 0, 0, canvas.width, canvas.height);
+
+
+  if (state.drawing === 'lips') {
+    drawLipsContour(predictions, ctx);
+  } else if (state.drawing === 'mesh') {
+    drawAllPrediction(predictions, ctx, state.triangulateMesh);
+  } else if (state.drawing === 'all' ) {
+    ALL_REGIONS.forEach(name => strokeFacePart(predictions, ctx, name));
+  } else {
+    strokeFacePart(predictions, ctx, state.drawing);
+  }
+
+  if (state.renderPointcloud) {
+    drawScatterPoints(predictions, ctx, scatterGL);
+  }
+
+
+  requestAnimationFrame(render);
+
+}
+
+
+
+
 
 async function main() {
   await tf.setBackend(state.backend);
   setupDatGui();
 
-  stats.showPanel(0);  // 0: fps, 1: ms, 2: mb, 3+: custom
-  document.getElementById('main').appendChild(stats.domElement);
+  // stats.showPanel(0);  // 0: fps, 1: ms, 2: mb, 3+: custom
+  // document.getElementById('main').appendChild(stats.domElement);
 
   await setupCamera();
   video.play();
@@ -194,16 +195,17 @@ async function main() {
   ctx.lineWidth = 0.5;
 
   model = await facemesh.load({maxFaces: state.maxFaces});
-  renderPrediction();
 
-  if (renderPointcloud) {
-    document.querySelector('#scatter-gl-container').style =
-        `width: ${VIDEO_SIZE}px; height: ${VIDEO_SIZE}px;`;
+  
+  document.querySelector('#scatter-gl-container').style = `width: ${VIDEO_SIZE}px; height: ${VIDEO_SIZE}px;`; 
+  scatterGL = new ScatterGL(
+      document.querySelector('#scatter-gl-container'),
+      {'rotateOnStart': false, 'selectEnabled': false});
 
-    scatterGL = new ScatterGL(
-        document.querySelector('#scatter-gl-container'),
-        {'rotateOnStart': false, 'selectEnabled': false});
-  }
+
+  
+  render();
+  
 };
 
 main();
