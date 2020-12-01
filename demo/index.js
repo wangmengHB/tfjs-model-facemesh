@@ -55,7 +55,7 @@ const state = {
   maxFaces: 5,
   triangulateMesh: true,
   renderPointcloud: true,
-  drawing: 'lips',
+  drawing: 'all',
 };
 
 
@@ -132,6 +132,14 @@ async function render() {
   ----------------------
   item.annotations: 
   ${JSON.stringify(predictions.map((item) => Object.keys(item.annotations)), null, 4)}
+  item.faceInViewConfidence: 
+  ${JSON.stringify(predictions.map((item) => item.faceInViewConfidence), null, 4)}
+  item.boundingBox: 
+  ${JSON.stringify(predictions.map((item) => Object.keys(item.boundingBox)), null, 4)}
+  item.mesh count: 
+  ${JSON.stringify(predictions.map((item) => item.mesh.length ))}
+  item.scaledMesh count: 
+  ${JSON.stringify(predictions.map((item) => item.scaledMesh.length ))}
   `;
   const prevLog = outputDiv.value;
   if (prevLog !== log) {
